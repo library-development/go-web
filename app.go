@@ -11,10 +11,11 @@ type Model struct {
 }
 
 type Function struct {
-	Name    string    `json:"name"`
-	Inputs  []Field   `json:"inputs"`
-	Outputs []Field   `json:"outputs"`
-	Impl    []Command `json:"impl"`
+	Name     string    `json:"name"`
+	Inputs   []Field   `json:"inputs"`
+	Outputs  []Field   `json:"outputs"`
+	Validate []Command `json:"validate"`
+	Execute  []Command `json:"execute"`
 }
 
 type Command struct {
@@ -24,7 +25,8 @@ type Command struct {
 }
 
 type Field struct {
-	Type Type `json:"type"`
+	Name string `json:"name"`
+	Type Type   `json:"type"`
 }
 
 type Type struct {
