@@ -1,10 +1,11 @@
 package web
 
 type App struct {
-	Models map[string]Model `json:"models"`
+	Models []Model `json:"models"`
 }
 
 type Model struct {
+	Name    string     `json:"name"`
 	Fields  []Field    `json:"fields"`
 	Methods []Function `json:"methods"`
 }
