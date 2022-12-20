@@ -74,28 +74,22 @@ func (p *Platform) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.Method == "POST" && r.URL.Path == "/exec" {
-		var execRequest ExecRequest
-		err = json.Unmarshal(req.Body, &execRequest)
+		var execRequest *ExecRequest
+		err = json.Unmarshal(req.Body, execRequest)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		result, err := p.Exec(&execRequest)
+		err := p.Exec(w, execRequest)
 		if err != nil {
 			go p.ReportError(req, err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		err = json.NewEncoder(w).Encode(result)
-		if err != nil {
-			go p.ReportError(req, err)
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		return
+	} else {
+		dir := filepath.Join(p.PublicDir(), req.Host)
+		http.FileServer(http.Dir(dir)).ServeHTTP(w, r)
 	}
-	dir := filepath.Join(p.PublicDir(), req.Host)
-	http.FileServer(http.Dir(dir)).ServeHTTP(w, r)
 }
 
 func (p *Platform) ReportError(req *Request, err error) {
@@ -119,6 +113,34 @@ func (p *Platform) WriteRequestLog(r *Request) error {
 	return os.WriteFile(logFile, b, os.ModePerm)
 }
 
-func (p *Platform) Exec(req *ExecRequest) (any, error) {
-	return nil, nil
+func (p *Platform) cmdDir() string {
+	return filepath.Join(p.SourceDir(), "github.com/function-cafe/go-cmd")
+}
+
+func (p *Platform) Exec(out io.Writer, req *ExecRequest) error {
+	mainFile := filepath.Join(p.cmdDir(), req.Pkg, strings.ToLower(req.Func), "main.go")
+	err := golang.GenerateCLI(s.SourceDir, req.Pkg, req.Func, mainFile)
+	if err != nil {
+		return err
+	}
+	cmd := exec.Command("go", "run", mainFile)
+	cmd.Dir = s.SourceDir
+	cmd.Stdout = out
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return err
+	}
+	err = json.NewEncoder(stdin).Encode(req.Inputs)
+	if err != nil {
+		return err
+	}
+	err = stdin.Close()
+	if err != nil {
+		return err
+	}
+	err = cmd.Run()
+	if err != nil {
+		return err
+	}
+	return nil
 }
