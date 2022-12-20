@@ -67,8 +67,12 @@ func (p *Platform) PublicDir() string {
 	return filepath.Join(p.DataDir, "public")
 }
 
-func (p *Platform) SchemaDir() string {
-	return filepath.Join(p.DataDir, "schemas")
+func (p *Platform) TypesDir() string {
+	return filepath.Join(p.DataDir, "types")
+}
+
+func (p *Platform) FunctionsDir() string {
+	return filepath.Join(p.DataDir, "functions")
 }
 
 func (p *Platform) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -150,5 +154,42 @@ func (p *Platform) Exec(out io.Writer, req *ExecRequest) error {
 }
 
 func (p *Platform) pullShopifySchemas() error {
+	return nil
+}
+
+// ImportTypes reads through all the files in the /src dir and imports any exported types defined in .go files.
+// The types are placed in the /types dir.
+func (p *Platform) ImportTypes() error {
+	return nil
+}
+
+// ImportFunctions reads through all the files in the /src dir and imports any exported functions defined in .go files.
+// The functions are placed in the /functions dir.
+// Methods are ignored.
+func (p *Platform) ImportFunctions() error {
+	return nil
+}
+
+// CloneGithubRepo clones a repo from github.com into the /src dir.
+func (p *Platform) CloneGithubRepo(org, repo string) error {
+	return nil
+}
+
+// CreatePublicGithubRepo creates a public repo on github.com.
+func (p *Platform) CreatePublicGithubRepo(ghToken, org, repo string) error {
+	return nil
+}
+
+// EditGithubRepo makes changes to a repo in /src.
+// Changes are commited and published to github.com.
+func (p *Platform) EditGithubRepo(org, repo string, edits []struct {
+	Path  string
+	Value string
+}) error {
+	return nil
+}
+
+// PullGithubRepo pulls a repo already in /src.
+func (p *Platform) PullGithubRepo(org, repo string) error {
 	return nil
 }
