@@ -67,6 +67,10 @@ func (p *Platform) PublicDir() string {
 	return filepath.Join(p.DataDir, "public")
 }
 
+func (p *Platform) SchemaDir() string {
+	return filepath.Join(p.DataDir, "schemas")
+}
+
 func (p *Platform) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	req := BuiltRequest(r)
 	if err := p.WriteRequestLog(req); err != nil {
@@ -142,5 +146,9 @@ func (p *Platform) Exec(out io.Writer, req *ExecRequest) error {
 	if err != nil {
 		return err
 	}
+	return nil
+}
+
+func (p *Platform) pullShopifySchemas() error {
 	return nil
 }
