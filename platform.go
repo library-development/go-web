@@ -202,6 +202,10 @@ func (p *Platform) Generate() error {
 	}
 	p.GenerateCode()
 	go p.PublishCode()
+	p.GenerateTypes()
+	p.GenerateSchemas()
+	p.GenerateFunctions()
+	p.GeneratePublic()
 	return nil
 }
 
