@@ -193,3 +193,19 @@ func (p *Platform) EditGithubRepo(org, repo string, edits []struct {
 func (p *Platform) PullGithubRepo(org, repo string) error {
 	return nil
 }
+
+// Generate propagates changes throughout the filesystem.
+// After workers make changes to certain files, this should be run to generate dependant files.
+func (p *Platform) Generate() error {
+	for _, userID := range p.ListUsers() {
+		p.PublishUserEdits(userID)
+	}
+	p.GenerateCode()
+	go p.PublishCode()
+	return nil
+}
+
+// ListUsers returns a list of all usernames.
+func (p *Platform) ListUsers() ([]string, error) {
+	return nil, nil
+}
