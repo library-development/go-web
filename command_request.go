@@ -1,6 +1,6 @@
 package web
 
-import "github.com/library-development/go-auth"
+import "lib.dev/auth"
 
 type CommandRequest struct {
 	Auth    *auth.Credentials `json:"auth"`

@@ -1,9 +1,9 @@
-module github.com/library-development/go-web
+module lib.dev/web
 
 go 1.19
 
 require (
-	github.com/library-development/go-auth v0.0.0-20221204180942-dbf7dff38e4e
+	lib.dev/auth v0.0.0-20221204180942-dbf7dff38e4e
 	golang.org/x/crypto v0.4.0
 )
 

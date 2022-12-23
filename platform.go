@@ -14,8 +14,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/library-development/go-golang"
 	"golang.org/x/crypto/acme/autocert"
+	"lib.dev/golang"
 )
 
 type Platform struct {
