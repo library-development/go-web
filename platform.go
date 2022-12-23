@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"html/template"
 	"io"
 	"net/http"
 	"os"
@@ -396,4 +397,11 @@ func (p *Platform) Type(host, path string) string {
 		return ""
 	}
 	return ""
+}
+
+// HTMLViewTemplate returns the HTML template for viewing the given type.
+func (p *Platform) HTMLViewTemplate(t string) *template.Template {
+	templatePath := filepath.Join(p.typesDir(), t, "view.html")
+	tmpl, _ := template.New("view.html").ParseFiles(templatePath)
+	return tmpl
 }
