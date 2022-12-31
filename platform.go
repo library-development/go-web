@@ -18,9 +18,22 @@ import (
 	"lib.dev/golang"
 )
 
+// Platform is the main type for the web platform.
+// It implements the http.Handler interface.
+// DataDir is the directory where the platform stores its data.
 type Platform struct {
-	DataDir          string
-	LetsEncryptEmail string
+	// DataDir is a path to the directory where the platform stores its data.
+	// The following subdirectories are used:
+	// - src: source code
+	// - logs: request logs
+	// - certs: TLS certificates
+	// - public: public files
+	// - types: type metadata
+	// - functions: function metadata
+	// - bin: compiled binaries
+	// - user_data: user data
+	DataDir          string `json:"data_dir"`
+	LetsEncryptEmail string `json:"lets_encrypt_email"`
 }
 
 func (p *Platform) autocertManager() autocert.Manager {
@@ -57,6 +70,7 @@ func (p *Platform) listHosts() ([]string, error) {
 	return hosts, nil
 }
 
+// Start starts the web platform.
 func (p *Platform) Start() error {
 	manager := p.autocertManager()
 	return http.Serve(manager.Listener(), p)
@@ -111,20 +125,116 @@ func (p *Platform) logRequest(r *http.Request) error {
 	return os.WriteFile(logFile, b, os.ModePerm)
 }
 
+// Proxy returns the port of the proxy for the given host.
+func (p *Platform) proxy(host string) (string, bool) {
+	proxyFile := filepath.Join(p.proxyDir(), host)
+	port, err := os.ReadFile(proxyFile)
+	if err != nil {
+		return "", false
+	}
+	return string(port), true
+}
+
+// proxyDir returns the directory where the proxy files are stored.
+func (p *Platform) proxyDir() string {
+	return filepath.Join(p.DataDir, "proxy")
+}
+
 func (p *Platform) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	err := p.logRequest(r)
 	if err != nil {
 		p.ReportError(r, err)
 	}
-	if r.Method == http.MethodGet {
-		p.handleGET(w, r)
-	}
-	if err != nil {
+
+	port, isProxy := p.proxy(r.Host)
+	if isProxy {
+		httputil.NewSingleHostReverseProxy(&url.URL{
+			Scheme: "http",
+			Host:   "localhost:" + port,
+		}).ServeHTTP(w, r)
 		return
 	}
-	if r.Method == http.MethodPost {
-		p.handlePOST(w, r)
+
+	file, err := p.ReadFile(r.Host, r.URL.Path)
+	if err != nil {
+		p.ReportError(r, err)
+		return
 	}
+
+	if !p.IsAuthorized(r, file) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	file.ServeHTTP(w, r)
+
+	err := p.WriteFile(r.Host, r.URL.Path, file)
+	if err != nil {
+		p.ReportError(r, err)
+		return
+	}
+}
+
+// authDir returns the directory where the auth files are stored.
+func (p *Platform) authDir() string {
+	return filepath.Join(p.DataDir, "auth")
+}
+
+// IsAuthorized returns true if the request is authorized to continue.
+func (p *Platform) IsAuthorized(r *http.Request, file *File) bool {
+	if r.Method == http.MethodGet {
+		return true
+	}
+	sessionToken := r.Header.Get("Authorization")
+	userID := p.UserID(sessionToken)
+	_, ok := file.Metadata.Owners[userID]
+	return ok
+}
+
+// UserID returns the user ID for the given session token.
+func (p *Platform) UserID(sessionToken string) string {
+	sessionFile := filepath.Join(p.authDir(), "sessions", sessionToken)
+	userID, _ := os.ReadFile(sessionFile)
+	return string(userID)
+}
+
+// WriteFile writes the file for the given host and path.
+func (p *Platform) WriteFile(host, path string, file *File) error {
+	f, err := os.Create(filepath.Join(p.filesDir(), host, path))
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	enc := json.NewEncoder(f)
+	enc.SetIndent("", "  ")
+	err = enc.Encode(file)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (p *Platform) filesDir() string {
+	return filepath.Join(p.DataDir, "files")
+}
+
+// ReadFile returns the file for the given host and path.
+func (p *Platform) ReadFile(host, path string) (*File, error) {
+	f, err := os.Open(filepath.Join(p.filesDir(), host, path))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	defer f.Close()
+	dec := json.NewDecoder(f)
+	var file File
+	err = dec.Decode(&file)
+	if err != nil {
+		return nil, err
+	}
+	return &file, nil
 }
 
 func (p *Platform) handleGET(w http.ResponseWriter, r *http.Request) {
