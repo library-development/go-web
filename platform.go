@@ -325,9 +325,9 @@ func (p *Platform) handleError(w http.ResponseWriter, r *http.Request, err error
 	}
 }
 
-// ServeHTTPNext is the next version of the ServeHTTP function.
+// ServeHTTP is the next version of the ServeHTTP function.
 // It is a work in progress.
-func (p *Platform) ServeHTTPNext(w http.ResponseWriter, r *http.Request) {
+func (p *Platform) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	p.connections.Inc()
 
 	err := p.logRequest(r)
@@ -354,6 +354,7 @@ func (p *Platform) ServeHTTPNext(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// main logic
 	path := filepath.Join(r.Host, r.URL.Path)
 	file, err := p.getFile(path)
 	if err != nil {
@@ -367,15 +368,14 @@ func (p *Platform) ServeHTTPNext(w http.ResponseWriter, r *http.Request) {
 			json.NewEncoder(w).Encode(file)
 		}
 	}
-
 	if isPOST(r) {
 	}
 
 	p.connections.Dec()
 }
 
-// ServeHTTP is the main request handler for the platform.
-func (p *Platform) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+// oldServeHTTP is the main request handler for the platform.
+func (p *Platform) oldServeHTTP(w http.ResponseWriter, r *http.Request) {
 	err := p.logRequest(r)
 	if err != nil {
 		p.reportError(r, err)
@@ -656,35 +656,13 @@ func (p *Platform) generatePublic() error {
 	return nil
 }
 
-// t returns the type at a given path.
-func (p *Platform) t(host, path string) string {
-	fileinfo, err := os.Stat(filepath.Join(p.publicDir(), host, path))
-	if err != nil {
-		return ""
-	}
-	if fileinfo.IsDir() {
-		return "folder"
-	}
-	parts := PathParts(path)
-	switch host {
-	case "api.schema.cafe":
-		if len(parts) == 0 {
-			return "folder"
-		}
-		if parts[0] == "schemas" {
-			return "schema"
-		}
-	default:
-		err := fmt.Errorf("unknown host: %s", host)
-		p.reportError(nil, err)
-		return ""
-	}
-	return ""
-}
-
 // htmlViewTemplate returns the HTML template for viewing the given type.
 func (p *Platform) htmlViewTemplate(t string) *template.Template {
 	templatePath := filepath.Join(p.typesDir(), t, "view.html")
 	tmpl, _ := template.New("view.html").ParseFiles(templatePath)
 	return tmpl
+}
+
+func (p *Platform) getType(id golang.Ident)(golang.Type, error) {
+	return nil, nil
 }
