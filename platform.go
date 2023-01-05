@@ -1,7 +1,6 @@
 package web
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -15,9 +14,12 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"golang.org/x/crypto/acme/autocert"
 	"lib.dev/golang"
+
+	"github.com/oklog/ulid/v2"
 )
 
 // Platform is the main type for the web platform.
@@ -42,6 +44,7 @@ type Platform struct {
 	connections *Counter
 }
 
+// copyFile copies a file from one location to another.
 func (p *Platform) copyFile(from, to string) error {
 	data, err := os.ReadFile(from)
 	if err != nil {
@@ -50,6 +53,8 @@ func (p *Platform) copyFile(from, to string) error {
 	return os.WriteFile(to, data, os.ModePerm)
 }
 
+// Install installs the platform.
+// It copies the systemd files and starts the platform service.
 func (p *Platform) Install() error {
 	// copy systemd files
 	err := p.copyFile(filepath.Join(p.systemdDir(), "system/platform.service"), "/etc/systemd/system/platform.service")
@@ -74,9 +79,10 @@ func (p *Platform) Install() error {
 	return nil
 }
 
-func (p *Platform) Update() error {
+// Upgrade upgrades the platform.
+func (p *Platform) Upgrade() error {
 	// Build platform
-	err := p.BuildCmd("platform")
+	err := p.buildCmd("platform")
 	if err != nil {
 		return err
 	}
@@ -91,7 +97,8 @@ func (p *Platform) Update() error {
 	return nil
 }
 
-func (p *Platform) BuildCmd(name string) error {
+// buildCmd builds a command in /cmd.
+func (p *Platform) buildCmd(name string) error {
 	mainFile := filepath.Join(p.cmdDir(), name, "main.go")
 	outFile := filepath.Join(p.binDir(), name)
 	cmd := exec.Command("go", "build", "-o", outFile, mainFile)
@@ -102,6 +109,7 @@ func (p *Platform) BuildCmd(name string) error {
 	return nil
 }
 
+// BuildAll builds all commands in /cmd.
 func (p *Platform) BuildAll() error {
 	entries, err := os.ReadDir(p.cmdDir())
 	if err != nil {
@@ -109,7 +117,7 @@ func (p *Platform) BuildAll() error {
 	}
 	for _, entry := range entries {
 		if entry.IsDir() {
-			if err := p.BuildCmd(entry.Name()); err != nil {
+			if err := p.buildCmd(entry.Name()); err != nil {
 				return err
 			}
 		}
@@ -117,6 +125,7 @@ func (p *Platform) BuildAll() error {
 	return nil
 }
 
+// autocertManager builds the autocert.Manager for internal use.
 func (p *Platform) autocertManager() autocert.Manager {
 	return autocert.Manager{
 		Prompt: autocert.AcceptTOS,
@@ -137,6 +146,7 @@ func (p *Platform) autocertManager() autocert.Manager {
 	}
 }
 
+// listHosts returns a list of strings containing the names of all hosts on the platform.
 func (p *Platform) listHosts() ([]string, error) {
 	hosts := []string{}
 	entries, err := os.ReadDir(p.publicDir())
@@ -157,38 +167,67 @@ func (p *Platform) Start() error {
 	return http.Serve(manager.Listener(), p)
 }
 
+// /systemd
 func (p *Platform) systemdDir() string {
 	return filepath.Join(p.DataDir, "systemd")
 }
 
+// /src
 func (p *Platform) sourceDir() string {
 	return filepath.Join(p.DataDir, "src")
 }
 
+// /logs
 func (p *Platform) logsDir() string {
 	return filepath.Join(p.DataDir, "logs")
 }
 
+// /certs
 func (p *Platform) certDir() string {
 	return filepath.Join(p.DataDir, "certs")
 }
 
+// /public
 func (p *Platform) publicDir() string {
 	return filepath.Join(p.DataDir, "public")
 }
 
+// /types
 func (p *Platform) typesDir() string {
 	return filepath.Join(p.DataDir, "types")
 }
 
+// /functions
 func (p *Platform) functionsDir() string {
 	return filepath.Join(p.DataDir, "functions")
 }
 
+// /bin
 func (p *Platform) binDir() string {
 	return filepath.Join(p.DataDir, "bin")
 }
 
+// /files
+func (p *Platform) filesDir() string {
+	return filepath.Join(p.DataDir, "files")
+}
+
+// fileDir is a nicer name than filesDir.
+func (p *Platform) fileDir() string {
+	return p.filesDir()
+}
+
+// /auth
+func (p *Platform) authDir() string {
+	return filepath.Join(p.DataDir, "auth")
+}
+
+// /errors
+func (p *Platform) errorsDir() string {
+	return filepath.Join(p.DataDir, "errors")
+}
+
+// logRequest logs the request to the logs directory.
 func (p *Platform) logRequest(r *http.Request) error {
 	req, err := BuildRequest(r)
 	if err != nil {
@@ -210,21 +249,7 @@ func (p *Platform) logRequest(r *http.Request) error {
 	return os.WriteFile(logFile, b, os.ModePerm)
 }
 
-// Proxy returns the port of the proxy for the given host.
-func (p *Platform) proxy(host string) (string, bool) {
-	proxyFile := filepath.Join(p.proxyDir(), host)
-	port, err := os.ReadFile(proxyFile)
-	if err != nil {
-		return "", false
-	}
-	return string(port), true
-}
-
-// proxyDir returns the directory where the proxy files are stored.
-func (p *Platform) proxyDir() string {
-	return filepath.Join(p.DataDir, "proxy")
-}
-
+// reverseProxyAddress returns the address of the reverse proxy for the request and true if the request should be proxied.
 func (p *Platform) reverseProxyAddress(r *http.Request) (string, bool) {
 	dirPath := filepath.Join(p.publicDir(), r.Host, r.URL.Path)
 	for {
@@ -244,12 +269,9 @@ func (p *Platform) reverseProxyAddress(r *http.Request) (string, bool) {
 	}
 }
 
+// htmlTemplate returns an html.Template for browser requests.
 func (p *Platform) htmlTemplate() *template.Template {
 	return template.Must(template.New("html").Parse(htmlTemplate))
-}
-
-func (p *Platform) fileDir() string {
-	return filepath.Join(p.DataDir, "files")
 }
 
 // getFile returns the file with the given path.
@@ -275,16 +297,12 @@ func (p *Platform) getFile(path string) (*File, error) {
 	return file, nil
 }
 
-func (p *Platform) writeError(w http.ResponseWriter, r *http.Request, err error, code int) {
-	w.WriteHeader(code)
-	if isHTML(r) {
-		fmt.Fprintf(w, "Error: %v", err)
-	} else {
-		json.NewEncoder(w).Encode(err)
-	}
-}
-
+// handleError writes an error to the response if err is not nil.
 func (p *Platform) handleError(w http.ResponseWriter, r *http.Request, err error) {
+	if err == nil {
+		return
+	}
+
 	if os.IsNotExist(err) {
 		if isHTML(r) {
 			w.Header().Set("Content-Type", "text/html")
@@ -296,7 +314,7 @@ func (p *Platform) handleError(w http.ResponseWriter, r *http.Request, err error
 		return
 	}
 
-	p.ReportError(r, err)
+	p.reportError(r, err)
 
 	if isHTML(r) {
 		w.Header().Set("Content-Type", "text/html")
@@ -307,8 +325,35 @@ func (p *Platform) handleError(w http.ResponseWriter, r *http.Request, err error
 	}
 }
 
-func (p *Platform) GenericServe(w http.ResponseWriter, r *http.Request) {
+// ServeHTTPNext is the next version of the ServeHTTP function.
+// It is a work in progress.
+func (p *Platform) ServeHTTPNext(w http.ResponseWriter, r *http.Request) {
 	p.connections.Inc()
+
+	err := p.logRequest(r)
+	if err != nil {
+		p.reportError(r, err)
+	}
+
+	revProxyAddr, isRevProxy := p.reverseProxyAddress(r)
+	if isRevProxy {
+		proxyURL, err := url.Parse(revProxyAddr)
+		if err != nil {
+			p.reportError(r, err)
+			return
+		}
+
+		proxy := &httputil.ReverseProxy{
+			Director: func(r *http.Request) {
+				r.URL.Scheme = proxyURL.Scheme
+				r.URL.Host = proxyURL.Host
+				r.URL.Path = filepath.Join(proxyURL.Path, r.URL.Path)
+			},
+		}
+		proxy.ServeHTTP(w, r)
+		return
+	}
+
 	path := filepath.Join(r.Host, r.URL.Path)
 	file, err := p.getFile(path)
 	if err != nil {
@@ -322,22 +367,25 @@ func (p *Platform) GenericServe(w http.ResponseWriter, r *http.Request) {
 			json.NewEncoder(w).Encode(file)
 		}
 	}
+
 	if isPOST(r) {
 	}
+
 	p.connections.Dec()
 }
 
+// ServeHTTP is the main request handler for the platform.
 func (p *Platform) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	err := p.logRequest(r)
 	if err != nil {
-		p.ReportError(r, err)
+		p.reportError(r, err)
 	}
 
 	revProxyAddr, isRevProxy := p.reverseProxyAddress(r)
 	if isRevProxy {
 		proxyURL, err := url.Parse(revProxyAddr)
 		if err != nil {
-			p.ReportError(r, err)
+			p.reportError(r, err)
 			return
 		}
 
@@ -356,13 +404,8 @@ func (p *Platform) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	http.FileServer(http.Dir(dir)).ServeHTTP(w, r)
 }
 
-// authDir returns the directory where the auth files are stored.
-func (p *Platform) authDir() string {
-	return filepath.Join(p.DataDir, "auth")
-}
-
-// IsAuthorized returns true if the request is authorized to continue.
-func (p *Platform) IsAuthorized(r *http.Request, file *File) bool {
+// isAuthorized returns true if the request is authorized to continue.
+func (p *Platform) isAuthorized(r *http.Request, file *File) bool {
 	if r.Method == http.MethodGet {
 		return true
 	}
@@ -395,12 +438,8 @@ func (p *Platform) WriteFile(host, path string, file *File) error {
 	return nil
 }
 
-func (p *Platform) filesDir() string {
-	return filepath.Join(p.DataDir, "files")
-}
-
-// ReadFile returns the file for the given host and path.
-func (p *Platform) ReadFile(host, path string) (*File, error) {
+// readFile returns the file for the given host and path.
+func (p *Platform) readFile(host, path string) (*File, error) {
 	f, err := os.Open(filepath.Join(p.filesDir(), host, path))
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -418,89 +457,38 @@ func (p *Platform) ReadFile(host, path string) (*File, error) {
 	return &file, nil
 }
 
-func (p *Platform) handleGET(w http.ResponseWriter, r *http.Request) {
-	f, err := os.Open(filepath.Join(p.publicDir(), r.Host, r.URL.Path))
+// newName generates a new random string for a file name.
+func (p *Platform) newName() string {
+	return ulid.Make().String()
+}
+
+// reportError writes the error to file.
+func (p *Platform) reportError(r *http.Request, err error) {
+	if err == nil {
+		panic(err)
+	}
+
+	b, err := json.Marshal(err)
 	if err != nil {
-		if os.IsNotExist(err) {
-			p.handleNotFound(w, r)
-			return
-		}
-		p.ReportError(r, err)
-		return
+		panic(err)
 	}
-	defer f.Close()
-	t := p.Type(r.Host, r.URL.Path)
-	if strings.Contains(r.Header.Get("Accept"), "text/html") {
-		p.htmlHeader(w, r)
-		p.writeHTML(w, t, f)
-		p.htmlFooter(w, r)
-	} else {
-		var metadata struct {
-			Type  string `json:"type"`
-			ID    string `json:"id"`
-			Error error  `json:"error"`
-		}
-		metadata.Type = t
-		metadata.ID = r.Host + r.URL.Path
-		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte("{\"meta\":"))
-		enc := json.NewEncoder(w)
-		enc.Encode(metadata)
-		w.Write([]byte(",\"data\":"))
-		io.Copy(w, f)
-		w.Write([]byte("}"))
-	}
-}
 
-func (p *Platform) htmlHeader(w http.ResponseWriter, r *http.Request) {
-}
+	now := time.Now().UTC()
 
-func (p *Platform) htmlFooter(w http.ResponseWriter, r *http.Request) {
-}
+	f := &File{
+		Metadata: Metadata{
+			Type: golang.Ident{Name: "error"},
+			Owners: map[string]bool{
+				"mikerybka": true,
+			},
+			Public:    false,
+			Name:      p.newName(),
+			CreatedAt: now.Unix(),
+		},
+		Data: b,
+	}
 
-// writeHTML converts the json input d to html as type t and writes it to w.
-func (p *Platform) writeHTML(w io.Writer, t string, d io.Reader) {
-	switch t {
-	default:
-		fmt.Fprintf(w, "<pre>%s</pre>", d)
-	}
-}
-
-func (p *Platform) handleNotFound(w http.ResponseWriter, r *http.Request) {
-	if strings.Contains(r.Header.Get("Accept"), "text/html") {
-		w.Header().Set("Content-Type", "text/html")
-		w.Write([]byte("404 - Not Found"))
-	} else {
-		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte("\"meta\":{\"error\":\"not found\"}}"))
-	}
-}
-
-func (p *Platform) handlePOST(w http.ResponseWriter, r *http.Request) {
-	req := &ExecRequest{
-		Token: r.Header.Get("Token"),
-		Pkg:   filepath.Dir(p.funcCmdPkg() + "/" + r.Host + r.URL.Path),
-		Func:  filepath.Base(r.URL.Path),
-	}
-	json.NewDecoder(r.Body).Decode(&req.Inputs)
-	out := &bytes.Buffer{}
-	err := p.exec(out, req)
-	if err != nil {
-		p.ReportError(r, err)
-	}
-	if strings.Contains(r.Header.Get("Accept"), "text/html") {
-		w.Header().Set("Content-Type", "text/html")
-		p.htmlHeader(w, r)
-		p.writeHTML(w, "json", out)
-		p.htmlFooter(w, r)
-	} else {
-		w.Header().Set("Content-Type", "application/json")
-		w.Write(out.Bytes())
-	}
-}
-
-func (p *Platform) ReportError(r *http.Request, err error) {
-	fmt.Println("Error:", err)
+	p.WriteFile("mikerybka.com", "/feedback/platform/errors", f)
 }
 
 func (p *Platform) funcCmdPkg() string {
@@ -591,85 +579,85 @@ func (p *Platform) exec(out io.Writer, req *ExecRequest) error {
 	return nil
 }
 
-// ImportTypes reads through all the files in the /src dir and imports any exported types defined in .go files.
+// importTypes reads through all the files in the /src dir and imports any exported types defined in .go files.
 // The types are placed in the /types dir.
-func (p *Platform) ImportTypes() error {
+func (p *Platform) importTypes() error {
 	return nil
 }
 
-// ImportFunctions reads through all the files in the /src dir and imports any exported functions defined in .go files.
+// importFunctions reads through all the files in the /src dir and imports any exported functions defined in .go files.
 // The functions are placed in the /functions dir.
 // Methods are ignored.
-func (p *Platform) ImportFunctions() error {
+func (p *Platform) importFunctions() error {
 	return nil
 }
 
-// CloneGithubRepo clones a repo from github.com into the /src dir.
-func (p *Platform) CloneGithubRepo(org, repo string) error {
+// cloneGithubRepo clones a repo from github.com into the /src dir.
+func (p *Platform) cloneGithubRepo(org, repo string) error {
 	return nil
 }
 
-// CreatePublicGithubRepo creates a public repo on github.com.
-func (p *Platform) CreatePublicGithubRepo(ghToken, org, repo string) error {
+// createPublicGithubRepo creates a public repo on github.com.
+func (p *Platform) createPublicGithubRepo(ghToken, org, repo string) error {
 	return nil
 }
 
-// EditGithubRepo makes changes to a repo in /src.
+// editGithubRepo makes changes to a repo in /src.
 // Changes are commited and published to github.com.
-func (p *Platform) EditGithubRepo(org, repo string, edits []struct {
+func (p *Platform) editGithubRepo(org, repo string, edits []struct {
 	Path  string
 	Value string
 }) error {
 	return nil
 }
 
-// PullGithubRepo pulls a repo already in /src.
-func (p *Platform) PullGithubRepo(org, repo string) error {
+// pullGithubRepo pulls a repo already in /src.
+func (p *Platform) pullGithubRepo(org, repo string) error {
 	return nil
 }
 
-// ListUsers returns a list of all usernames.
-func (p *Platform) ListUsers() ([]string, error) {
+// listUsers returns a list of all usernames.
+func (p *Platform) listUsers() ([]string, error) {
 	return nil, nil
 }
 
-// PublishUserEdits copies public files owned by owner from thier data dir to /public.
-func (p *Platform) PublishUserEdits(owner string) error {
+// publishUserEdits copies public files owned by owner from thier data dir to /public.
+func (p *Platform) publishUserEdits(owner string) error {
 	return nil
 }
 
-// GenerateCode generates code from the /src dir.
-func (p *Platform) GenerateCode() error {
+// generateCode generates code from the /src dir.
+func (p *Platform) generateCode() error {
 	return nil
 }
 
-// PublishCode pushes code to github.com.
-func (p *Platform) PublishCode() error {
+// publishCode pushes code to github.com.
+func (p *Platform) publishCode() error {
 	return nil
 }
 
-// GenerateTypes generates types from the /src dir.
-func (p *Platform) GenerateTypes() error {
+// generateTypes generates types from the /src dir.
+func (p *Platform) generateTypes() error {
 	return nil
 }
 
-// GenerateSchemas generates schemas from the /src dir.
-func (p *Platform) GenerateSchemas() error {
+// generateSchemas generates schemas from the /src dir.
+func (p *Platform) generateSchemas() error {
 	return nil
 }
 
-// GenerateFunctions generates functions from the /src dir.
-func (p *Platform) GenerateFunctions() error {
+// generateFunctions generates functions from the /src dir.
+func (p *Platform) generateFunctions() error {
 	return nil
 }
 
-// GeneratePublic generates the rest of the public dir.
-func (p *Platform) GeneratePublic() error {
+// generatePublic generates the rest of the public dir.
+func (p *Platform) generatePublic() error {
 	return nil
 }
 
-// Type returns the type at a given path.
-func (p *Platform) Type(host, path string) string {
+// t returns the type at a given path.
+func (p *Platform) t(host, path string) string {
 	fileinfo, err := os.Stat(filepath.Join(p.publicDir(), host, path))
 	if err != nil {
 		return ""
@@ -688,14 +676,14 @@ func (p *Platform) Type(host, path string) string {
 		}
 	default:
 		err := fmt.Errorf("unknown host: %s", host)
-		p.ReportError(nil, err)
+		p.reportError(nil, err)
 		return ""
 	}
 	return ""
 }
 
-// HTMLViewTemplate returns the HTML template for viewing the given type.
-func (p *Platform) HTMLViewTemplate(t string) *template.Template {
+// htmlViewTemplate returns the HTML template for viewing the given type.
+func (p *Platform) htmlViewTemplate(t string) *template.Template {
 	templatePath := filepath.Join(p.typesDir(), t, "view.html")
 	tmpl, _ := template.New("view.html").ParseFiles(templatePath)
 	return tmpl
