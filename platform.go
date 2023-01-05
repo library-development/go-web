@@ -8,6 +8,8 @@ import (
 	"html/template"
 	"io"
 	"net/http"
+	"net/http/httputil"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -22,6 +24,9 @@ import (
 // It implements the http.Handler interface.
 // DataDir is the directory where the platform stores its data.
 type Platform struct {
+	// LetsEncryptEmail is the email address used to register with Let's Encrypt.
+	LetsEncryptEmail string `json:"lets_encrypt_email"`
+
 	// DataDir is a path to the directory where the platform stores its data.
 	// The following subdirectories are used:
 	// - src: source code
@@ -32,8 +37,84 @@ type Platform struct {
 	// - functions: function metadata
 	// - bin: compiled binaries
 	// - user_data: user data
-	DataDir          string `json:"data_dir"`
-	LetsEncryptEmail string `json:"lets_encrypt_email"`
+	DataDir string `json:"data_dir"`
+
+	connections *Counter
+}
+
+func (p *Platform) copyFile(from, to string) error {
+	data, err := os.ReadFile(from)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(to, data, os.ModePerm)
+}
+
+func (p *Platform) Install() error {
+	// copy systemd files
+	err := p.copyFile(filepath.Join(p.systemdDir(), "system/platform.service"), "/etc/systemd/system/platform.service")
+	if err != nil {
+		return err
+	}
+
+	// systemctl daemon-reload
+	cmd := exec.Command("systemctl", "daemon-reload")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("%s: %s", err, string(output))
+	}
+
+	// systemctl start platform
+	cmd = exec.Command("systemctl", "start", "platform")
+	output, err = cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("%s: %s", err, string(output))
+	}
+
+	return nil
+}
+
+func (p *Platform) Update() error {
+	// Build platform
+	err := p.BuildCmd("platform")
+	if err != nil {
+		return err
+	}
+
+	// systemctl restart platform
+	cmd := exec.Command("systemctl", "restart", "platform")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("%s: %s", err, string(output))
+	}
+
+	return nil
+}
+
+func (p *Platform) BuildCmd(name string) error {
+	mainFile := filepath.Join(p.cmdDir(), name, "main.go")
+	outFile := filepath.Join(p.binDir(), name)
+	cmd := exec.Command("go", "build", "-o", outFile, mainFile)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("%s: %s", err, string(output))
+	}
+	return nil
+}
+
+func (p *Platform) BuildAll() error {
+	entries, err := os.ReadDir(p.cmdDir())
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if entry.IsDir() {
+			if err := p.BuildCmd(entry.Name()); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func (p *Platform) autocertManager() autocert.Manager {
@@ -74,6 +155,10 @@ func (p *Platform) listHosts() ([]string, error) {
 func (p *Platform) Start() error {
 	manager := p.autocertManager()
 	return http.Serve(manager.Listener(), p)
+}
+
+func (p *Platform) systemdDir() string {
+	return filepath.Join(p.DataDir, "systemd")
 }
 
 func (p *Platform) sourceDir() string {
@@ -140,39 +225,135 @@ func (p *Platform) proxyDir() string {
 	return filepath.Join(p.DataDir, "proxy")
 }
 
+func (p *Platform) reverseProxyAddress(r *http.Request) (string, bool) {
+	dirPath := filepath.Join(p.publicDir(), r.Host, r.URL.Path)
+	for {
+		filePath := filepath.Join(dirPath, "REVERSE_PROXY")
+		if _, err := os.Stat(filePath); os.IsNotExist(err) {
+			dirPath = filepath.Dir(dirPath)
+			if dirPath == p.publicDir() {
+				return "", false
+			}
+		} else {
+			b, err := os.ReadFile(filePath)
+			if err != nil {
+				panic(err)
+			}
+			return string(b), true
+		}
+	}
+}
+
+func (p *Platform) htmlTemplate() *template.Template {
+	return template.Must(template.New("html").Parse(htmlTemplate))
+}
+
+func (p *Platform) fileDir() string {
+	return filepath.Join(p.DataDir, "files")
+}
+
+// getFile returns the file with the given path.
+// If the file does not exist, an error is returned.
+// If the file is a directory, /index is appended to the path.
+func (p *Platform) getFile(path string) (*File, error) {
+	fi, err := os.Stat(path)
+	if err != nil {
+		return nil, err
+	}
+	if fi.IsDir() {
+		path = filepath.Join(path, "index")
+	}
+	var file *File
+	b, err := os.ReadFile(filepath.Join(p.fileDir(), path))
+	if err != nil {
+		return nil, err
+	}
+	err = json.Unmarshal(b, file)
+	if err != nil {
+		return nil, err
+	}
+	return file, nil
+}
+
+func (p *Platform) writeError(w http.ResponseWriter, r *http.Request, err error, code int) {
+	w.WriteHeader(code)
+	if isHTML(r) {
+		fmt.Fprintf(w, "Error: %v", err)
+	} else {
+		json.NewEncoder(w).Encode(err)
+	}
+}
+
+func (p *Platform) handleError(w http.ResponseWriter, r *http.Request, err error) {
+	if os.IsNotExist(err) {
+		if isHTML(r) {
+			w.Header().Set("Content-Type", "text/html")
+			w.Write([]byte("404 - Not Found"))
+		} else {
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte("\"meta\":{\"error\":\"not found\"}}"))
+		}
+		return
+	}
+
+	p.ReportError(r, err)
+
+	if isHTML(r) {
+		w.Header().Set("Content-Type", "text/html")
+		w.Write([]byte("500 - Internal Server Error"))
+	} else {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte("\"meta\":{\"error\":\"internal\"}}"))
+	}
+}
+
+func (p *Platform) GenericServe(w http.ResponseWriter, r *http.Request) {
+	p.connections.Inc()
+	path := filepath.Join(r.Host, r.URL.Path)
+	file, err := p.getFile(path)
+	if err != nil {
+		p.handleError(w, r, err)
+		return
+	}
+	if isGET(r) {
+		if isHTML(r) {
+			p.htmlTemplate().Execute(w, file)
+		} else {
+			json.NewEncoder(w).Encode(file)
+		}
+	}
+	if isPOST(r) {
+	}
+	p.connections.Dec()
+}
+
 func (p *Platform) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	err := p.logRequest(r)
 	if err != nil {
 		p.ReportError(r, err)
 	}
 
-	port, isProxy := p.proxy(r.Host)
-	if isProxy {
-		httputil.NewSingleHostReverseProxy(&url.URL{
-			Scheme: "http",
-			Host:   "localhost:" + port,
-		}).ServeHTTP(w, r)
+	revProxyAddr, isRevProxy := p.reverseProxyAddress(r)
+	if isRevProxy {
+		proxyURL, err := url.Parse(revProxyAddr)
+		if err != nil {
+			p.ReportError(r, err)
+			return
+		}
+
+		proxy := &httputil.ReverseProxy{
+			Director: func(r *http.Request) {
+				r.URL.Scheme = proxyURL.Scheme
+				r.URL.Host = proxyURL.Host
+				r.URL.Path = filepath.Join(proxyURL.Path, r.URL.Path)
+			},
+		}
+		proxy.ServeHTTP(w, r)
 		return
 	}
 
-	file, err := p.ReadFile(r.Host, r.URL.Path)
-	if err != nil {
-		p.ReportError(r, err)
-		return
-	}
-
-	if !p.IsAuthorized(r, file) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
-	}
-
-	file.ServeHTTP(w, r)
-
-	err := p.WriteFile(r.Host, r.URL.Path, file)
-	if err != nil {
-		p.ReportError(r, err)
-		return
-	}
+	dir := filepath.Join(p.publicDir(), r.Host)
+	http.FileServer(http.Dir(dir)).ServeHTTP(w, r)
 }
 
 // authDir returns the directory where the auth files are stored.
@@ -332,6 +513,10 @@ func (p *Platform) methodCmdPkg() string {
 
 func (p *Platform) funcCmdDir() string {
 	return filepath.Join(p.sourceDir(), p.funcCmdPkg())
+}
+
+func (p *Platform) cmdDir() string {
+	return filepath.Join(p.DataDir, "cmd")
 }
 
 func (p *Platform) methodCmdDir() string {

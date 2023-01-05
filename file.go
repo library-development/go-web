@@ -1,5 +1,13 @@
 package web
 
+import (
+	"encoding/json"
+	"io"
+	"net/http"
+
+	"lib.dev/nameconv"
+)
+
 type File struct {
 	Metadata Metadata `json:"metadata"`
 	Data     []byte   `json:"data"`
@@ -18,5 +26,13 @@ func (f *File) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (f *File) WriteHTML(w io.Writer) error {
-	return f.Metadata.WriteHTML(w)
+	return nil
+}
+
+func (f *File) Name() *nameconv.Name {
+	n, err := nameconv.ParseSnakeCase(f.Metadata.Name)
+	if err != nil {
+		panic(err)
+	}
+	return n
 }

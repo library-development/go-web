@@ -1,5 +1,10 @@
 package web
 
+import (
+	"net/http"
+	"strings"
+)
+
 func accept(r *http.Request, accept string) bool {
-	return strings.Includes(r.Header.Get("Accept"), accept)
+	return strings.Contains(r.Header.Get("Accept"), accept)
 }
