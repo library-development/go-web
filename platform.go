@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"html/template"
@@ -14,6 +15,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/crypto/acme/autocert"
@@ -42,6 +44,25 @@ type Platform struct {
 	DataDir string `json:"data_dir"`
 
 	connections *Counter
+	locks       map[string]*sync.Mutex
+}
+
+func (p *Platform) db() *DB {
+	locks := map[string]*sync.Mutex{}
+	for lockID, lock := range p.locks {
+		locks[strings.TrimPrefix(lockID, "/tables/")] = lock
+	}
+	return &DB{
+		LocalPath: p.tablesDir(),
+		Locks:     locks,
+	}
+}
+
+// newID generates a new unique ID for the given scope.
+func (p *Platform) newID(scope string) string {
+	p.locks[scope].Lock()
+	defer p.locks[scope].Unlock()
+	return ulid.MustNew(ulid.Timestamp(time.Now()), rand.Reader).String()
 }
 
 // copyFile copies a file from one location to another.
@@ -325,9 +346,46 @@ func (p *Platform) handleError(w http.ResponseWriter, r *http.Request, err error
 	}
 }
 
-// ServeHTTP is the next version of the ServeHTTP function.
+func (p *Platform) tablesDir() string {
+	return filepath.Join(p.DataDir, "tables")
+}
+
+func (p *Platform) tableType(tableID string) (*golang.Ident, error) {
+	path := filepath.Join(p.tablesDir(), tableID, "type")
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var t *golang.Ident
+	err = json.Unmarshal(b, t)
+	if err != nil {
+		return nil, err
+	}
+	return t, nil
+}
+
+func (p *Platform) table(id string) (*Table, error) {
+	return &Table{
+		LocalPath: filepath.Join(p.tablesDir(), id),
+	}, nil
+}
+
+func (p *Platform) createTable(id string, t *golang.Ident) error {
+	path := filepath.Join(p.tablesDir(), id, "type")
+	b, err := json.Marshal(t)
+	if err != nil {
+		return err
+	}
+	err = os.WriteFile(path, b, os.ModePerm)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+// ServeHTTPNext is the next version of the ServeHTTPNext function.
 // It is a work in progress.
-func (p *Platform) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (p *Platform) ServeHTTPNext(w http.ResponseWriter, r *http.Request) {
 	p.connections.Inc()
 
 	err := p.logRequest(r)
@@ -374,8 +432,8 @@ func (p *Platform) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	p.connections.Dec()
 }
 
-// oldServeHTTP is the main request handler for the platform.
-func (p *Platform) oldServeHTTP(w http.ResponseWriter, r *http.Request) {
+// ServeHTTP is the main request handler for the platform.
+func (p *Platform) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	err := p.logRequest(r)
 	if err != nil {
 		p.reportError(r, err)
@@ -424,7 +482,12 @@ func (p *Platform) UserID(sessionToken string) string {
 
 // WriteFile writes the file for the given host and path.
 func (p *Platform) WriteFile(host, path string, file *File) error {
-	f, err := os.Create(filepath.Join(p.filesDir(), host, path))
+	fp := filepath.Join(p.filesDir(), host, path)
+	err := os.MkdirAll(filepath.Dir(fp), os.ModePerm)
+	if err != nil {
+		return err
+	}
+	f, err := os.Create(fp)
 	if err != nil {
 		return err
 	}
@@ -473,7 +536,7 @@ func (p *Platform) reportError(r *http.Request, err error) {
 		panic(err)
 	}
 
-	now := time.Now().UTC()
+	createdAt := time.Now().UTC().UnixNano()
 
 	f := &File{
 		Metadata: Metadata{
@@ -483,12 +546,12 @@ func (p *Platform) reportError(r *http.Request, err error) {
 			},
 			Public:    false,
 			Name:      p.newName(),
-			CreatedAt: now.Unix(),
+			CreatedAt: createdAt,
 		},
 		Data: b,
 	}
 
-	p.WriteFile("mikerybka.com", "/feedback/platform/errors", f)
+	p.WriteFile("mikerybka.com", "/feedback/platform/errors/"+strconv.Itoa(int(createdAt)), f)
 }
 
 func (p *Platform) funcCmdPkg() string {
@@ -663,6 +726,6 @@ func (p *Platform) htmlViewTemplate(t string) *template.Template {
 	return tmpl
 }
 
-func (p *Platform) getType(id golang.Ident)(golang.Type, error) {
+func (p *Platform) getType(id golang.Ident) (*golang.Type, error) {
 	return nil, nil
 }
