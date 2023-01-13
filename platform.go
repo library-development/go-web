@@ -2,7 +2,6 @@ package web
 
 import (
 	"context"
-	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"html/template"
@@ -62,7 +61,7 @@ func (p *Platform) db() *DB {
 func (p *Platform) newID(scope string) string {
 	p.locks[scope].Lock()
 	defer p.locks[scope].Unlock()
-	return ulid.MustNew(ulid.Timestamp(time.Now()), rand.Reader).String()
+	return NewID()
 }
 
 // copyFile copies a file from one location to another.
@@ -540,7 +539,7 @@ func (p *Platform) reportError(r *http.Request, err error) {
 
 	f := &File{
 		Metadata: Metadata{
-			Type: golang.Ident{Name: "error"},
+			Type: "error",
 			Owners: map[string]bool{
 				"mikerybka": true,
 			},

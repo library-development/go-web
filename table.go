@@ -99,7 +99,7 @@ func (t *Table) Type() golang.Ident {
 // A random name is given to the file and returned.
 func (t *Table) Post(owners map[string]bool, data []byte) (string, error) {
 	var f *File
-	f.Metadata.Type = t.Type()
+	f.Metadata.Type = t.Type().String()
 	f.Metadata.Owners = owners
 	f.Metadata.Name = t.newID()
 	f.Metadata.CreatedAt = time.Now().UnixNano()
