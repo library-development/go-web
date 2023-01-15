@@ -1,6 +1,8 @@
 package web
 
+import "lib.dev/english"
+
 type Field struct {
-	Name Name `json:"name"`
-	Type Type `json:"type"`
+	Type        Type         `json:"type"`
+	EnglishName english.Name `json:"name"`
 }

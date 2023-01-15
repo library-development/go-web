@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"sync"
-
-	"golang.org/x/crypto/bcrypt"
 )
 
 // AuthDB is a service for authentication.
@@ -14,16 +12,31 @@ import (
 type AuthDB struct {
 	// Users are the users of the service.
 	Users map[string]*User `json:"users"`
-	// PasswordSalt is used to salt passwords.
-	PasswordSalt []byte `json:"password_salt"`
 	// RegistrationCodes are needed to create new users.
 	// Codes can be created by sending a POST request to /register with a valid registrar key.
 	RegistrationCodes map[string]bool `json:"registration_codes"`
 	// RegistrarKey is a secret key that is needed to generate registration codes.
 	// If your service is open to new signups, you can share this string publicly.
 	RegistrarKey string `json:"registrar_key"`
+	// AdminID is the UserID of the admin.
+	AdminID string `json:"admin_id"`
 	// locks are used to prevent race conditions.
 	locks map[string]*sync.Mutex
+}
+
+// GetUserFromRequest returns the user associated with the given request.
+// If the user is not found, it returns nil.
+func (s *AuthDB) GetUserFromRequest(r *http.Request) string {
+	userID := r.Header.Get("X-User")
+	sessionToken := r.Header.Get("X-Token")
+	user, ok := s.Users[userID]
+	if !ok {
+		return ""
+	}
+	if user.SessionTokens[sessionToken] {
+		return userID
+	}
+	return ""
 }
 
 // Invite creates a new registration code and returns it.
@@ -42,7 +55,7 @@ func (s *AuthDB) Register(registrationCode, password string) (string, error) {
 	delete(s.RegistrationCodes, registrationCode)
 	userID := s.newID("user")
 	user := &User{
-		PasswordHash:  s.passwordHash(password),
+		PasswordHash:  passwordHash(password),
 		SessionTokens: map[string]bool{},
 	}
 	s.Users[userID] = user
@@ -56,7 +69,7 @@ func (s *AuthDB) Login(userID, password string) (string, error) {
 	if !ok {
 		return "", ErrUserNotFound
 	}
-	if !s.passwordHashMatches(password, user.PasswordHash) {
+	if !passwordHashMatches(password, user.PasswordHash) {
 		return "", ErrInvalidPassword
 	}
 	sessionToken := s.newID("session_token")
@@ -142,7 +155,7 @@ func (s *AuthDB) login(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
 		return
 	}
-	if user.PasswordHash != s.passwordHash(req.Password) {
+	if user.PasswordHash != passwordHash(req.Password) {
 		w.WriteHeader(http.StatusUnauthorized)
 		return
 	}
@@ -223,24 +236,9 @@ func (s *AuthDB) newID(scope string) string {
 	return NewID()
 }
 
-// See https://security.stackexchange.com/questions/211/how-to-securely-hash-passwords/31846#31846
-func (s *AuthDB) passwordHash(password string) string {
-	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-	if err != nil {
-		panic(err)
-	}
-	return string(hash)
-}
-
 // generateRegistrationCode generates a new registration code.
 func (s *AuthDB) generateRegistrationCode() string {
 	code := s.newID("registration_code")
 	s.RegistrationCodes[code] = true
 	return code
-}
-
-// passwordHashMatches returns true if the given password hash matches the given password.
-func (s *AuthDB) passwordHashMatches(passwordHash, password string) bool {
-	err := bcrypt.CompareHashAndPassword([]byte(passwordHash), []byte(password))
-	return err == nil
 }

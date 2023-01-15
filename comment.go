@@ -1,3 +1,6 @@
 package web
 
-type Comment struct{}
+type Comment struct {
+	Author  string
+	Message string
+}

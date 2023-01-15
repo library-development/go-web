@@ -3,7 +3,9 @@ module lib.dev/web
 go 1.19
 
 require (
+	github.com/oklog/ulid/v2 v2.1.0
 	golang.org/x/crypto v0.4.0
+	lib.dev/english v0.0.0-20230113201404-89f995f6d115
 	lib.dev/golang v0.0.0-20221223233505-5688f215f885
 )
 

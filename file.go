@@ -1,17 +1,18 @@
 package web
 
-import "lib.dev/english"
+import (
+	"encoding/json"
+	"net/http"
+
+	"lib.dev/english"
+)
 
 // File is core concept in the web library.
 // It is used throughout the package to represent files and directories.
 // It doesn't actually contain the file's contents, but a SHA256 hash of the file's contents.
 type File struct {
 	// Type is the type of the file.
-	// It can be one of the following:
-	// - any builtin Go type
-	// - any type defined in the Go standard library
-	// - any exported type defined in a public MIT licensed library on pkg.go.dev
-	Type string `json:"type"`
+	Type Type `json:"type"`
 	// Owner is the ID of the organization that owns the file.
 	Owner string `json:"owner"`
 	// Owners is a map of user IDs that own the file.
@@ -38,4 +39,13 @@ type File struct {
 	SHA256 string `json:"sha256"`
 	// Size is the size of the file in bytes.
 	Size int64 `json:"size"`
+}
+
+func (f *File) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	b, err := json.MarshalIndent(f, "", "  ")
+	if err != nil {
+		panic(err)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(b)
 }

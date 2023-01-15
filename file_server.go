@@ -1,7 +1,6 @@
 package web
 
 import (
-	"encoding/json"
 	"net/http"
 )
 
@@ -27,26 +26,26 @@ func (s *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	path := ParsePath(r.URL.Path)
-	meta, err := s.metadata(path)
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		w.Write([]byte(err.Error()))
-		return
-	}
-	switch r.Method {
-	case http.MethodGet:
-		if meta.Public {
-			json.NewEncoder(w).Encode(meta)
-			return
-		}
-		if meta.Owner {
-			json.NewEncoder(w).Encode(meta)
-			return
-		}
-	case http.MethodPut:
-		// TODO
-	}
+	// path := ParsePath(r.URL.Path)
+	// meta, err := s.metadata(path)
+	// if err != nil {
+	// 	w.WriteHeader(http.StatusInternalServerError)
+	// 	w.Write([]byte(err.Error()))
+	// 	return
+	// }
+	// switch r.Method {
+	// case http.MethodGet:
+	// 	if meta.Public {
+	// 		json.NewEncoder(w).Encode(meta)
+	// 		return
+	// 	}
+	// 	// if meta.Owner {
+	// 	// 	json.NewEncoder(w).Encode(meta)
+	// 	// 	return
+	// 	// }
+	// case http.MethodPut:
+	// 	// TODO
+	// }
 }
 
 func (s *FileServer) authClient() *AuthClient {
@@ -54,16 +53,16 @@ func (s *FileServer) authClient() *AuthClient {
 }
 
 // metadata returns the metadata for the given path.
-func (s *FileServer) metadata(path Path) (*Metadata, error) {
-	resp, err := http.Get(s.MetadataServerAddr + path.String())
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	var m Metadata
-	err = json.NewDecoder(resp.Body).Decode(&m)
-	if err != nil {
-		return nil, err
-	}
-	return &m, nil
-}
+// func (s *FileServer) metadata(path Path) (*Metadata, error) {
+// 	resp, err := http.Get(s.MetadataServerAddr + path.String())
+// 	if err != nil {
+// 		return nil, err
+// 	}
+// 	defer resp.Body.Close()
+// 	var m Metadata
+// 	err = json.NewDecoder(resp.Body).Decode(&m)
+// 	if err != nil {
+// 		return nil, err
+// 	}
+// 	return &m, nil
+// }
