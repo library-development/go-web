@@ -41,3 +41,25 @@ func (p Path) SecondLast() string {
 func (p Path) Pop() Path {
 	return p[:len(p)-1]
 }
+
+func (p Path) Root() bool {
+	return p.Length() == 0
+}
+
+func (p Path) First() string {
+	if p.Length() < 1 {
+		return ""
+	}
+	return p[0]
+}
+
+func (p Path) Second() string {
+	if p.Length() < 2 {
+		return ""
+	}
+	return p[1]
+}
+
+func (p Path) Rest() Path {
+	return p[1:]
+}
