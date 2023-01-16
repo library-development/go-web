@@ -2,6 +2,7 @@ package web
 
 import (
 	"fmt"
+	"net/http"
 
 	"lib.dev/english"
 )
@@ -69,4 +70,8 @@ func (s *Schema) ChangeFieldType(fieldName english.Name, newType Type) error {
 		}
 	}
 	return fmt.Errorf("field %s does not exist", fieldName)
+}
+
+func (s *Schema) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// TODO
 }

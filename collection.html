@@ -1,0 +1,7 @@
+<ul>
+    {{range $id, $val := .}}
+        <li>
+            <a href="./{{ $id }}">{{ $id }}</a>
+        </li>
+    {{end}}
+</ul>
