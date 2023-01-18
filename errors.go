@@ -1,7 +1,7 @@
 package web
 
 type Error struct {
-	Err string `json:"error",omitempty,omitemptykey:""`
+	Err string `json:"error" omitemptykey:""`
 }
 
 func (e Error) Error() string {
