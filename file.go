@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"lib.dev/english"
+	"github.com/library-development/go-english"
 )
 
 // File is core concept in the web library.

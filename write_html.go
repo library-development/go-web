@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"io"
 
-	"lib.dev/golang"
+	"github.com/library-development/go-golang"
 )
 
 func writeHTML(t golang.Ident, w io.Writer, b []byte) error {

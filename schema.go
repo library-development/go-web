@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"net/http"
 
-	"lib.dev/english"
+	"github.com/library-development/go-english"
 )
 
 type Schema struct {

@@ -2,7 +2,7 @@ package web
 
 import "net/http"
 
-func ServeNotAuthorized(w http.ResponseWriter, r *http.Request) {
+func ServeUnauthorized(w http.ResponseWriter, r *http.Request) {
 	if IsHTML(r) {
 		http.Error(w, "not authorized", http.StatusUnauthorized)
 	} else {

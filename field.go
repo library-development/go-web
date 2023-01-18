@@ -1,6 +1,6 @@
 package web
 
-import "lib.dev/english"
+import "github.com/library-development/go-english"
 
 type Field struct {
 	Type        Type         `json:"type"`

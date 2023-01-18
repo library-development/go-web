@@ -3,7 +3,7 @@ package web
 import (
 	"io"
 
-	"lib.dev/english"
+	"github.com/library-development/go-english"
 )
 
 type Resource interface {

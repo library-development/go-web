@@ -12,6 +12,7 @@ type Platform struct {
 	LetsEncryptEmail string
 	CertDir          string
 	Apps             map[string]http.Handler
+	CmdURL           string
 }
 
 func (p *Platform) Start() error {
@@ -63,7 +64,7 @@ func (p *Platform) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // 	"time"
 
 // 	"golang.org/x/crypto/acme/autocert"
-// 	"lib.dev/golang"
+// 	"github.com/library-development/go-golang"
 
 // 	"github.com/oklog/ulid/v2"
 // )

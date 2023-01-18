@@ -3,7 +3,7 @@ package web
 import (
 	"encoding/json"
 
-	"lib.dev/english"
+	"github.com/library-development/go-english"
 )
 
 type HomePage struct {
@@ -12,7 +12,7 @@ type HomePage struct {
 
 func (h HomePage) Type() Type {
 	return Type{
-		BaseType: "lib.dev/web/HomePage",
+		BaseType: "github.com/library-development/go-web/HomePage",
 	}
 }
 

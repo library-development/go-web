@@ -2,6 +2,7 @@ package web
 
 import "strings"
 
+// Deprecated.
 func PathParts(p string) []string {
 	path := []string{}
 	if p == "" {

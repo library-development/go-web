@@ -1,6 +1,6 @@
 package web
 
-import "lib.dev/english"
+import "github.com/library-development/go-english"
 
 // Metadata is the metadata for a file.
 type Metadata struct {
